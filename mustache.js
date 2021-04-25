@@ -542,12 +542,17 @@ Writer.prototype.parse = function parse (template, tags) {
  * accepts a string as input and outputs a safely escaped string.
  * If an `escape` function is not provided, then an HTML-safe string
  * escaping function is used as the default.
+ *
+ * If the optional `multipleAttempts` argument is given here and the value is true,
+ * this will preserve any unmatched tokens in the rendered output. This will allow
+ * multiple calls to render with the ability to specify a different view to search.
+ * The default is false.
  */
-Writer.prototype.render = function render (template, view, partials, config) {
+Writer.prototype.render = function render (template, view, partials, config, multipleAttempts = false)) {
   var tags = this.getConfigTags(config);
   var tokens = this.parse(template, tags);
   var context = (view instanceof Context) ? view : new Context(view, undefined);
-  return this.renderTokens(tokens, context, partials, template, config);
+  return this.renderTokens(tokens, context, partials, template, config, multipleAttempts);
 };
 
 /**
@@ -559,7 +564,7 @@ Writer.prototype.render = function render (template, view, partials, config) {
  * If the template doesn't use higher-order sections, this argument may
  * be omitted.
  */
-Writer.prototype.renderTokens = function renderTokens (tokens, context, partials, originalTemplate, config) {
+Writer.prototype.renderTokens = function renderTokens (tokens, context, partials, originalTemplate, config, multipleAttempts = false) {
   var buffer = '';
 
   var token, symbol, value;
@@ -575,14 +580,18 @@ Writer.prototype.renderTokens = function renderTokens (tokens, context, partials
     else if (symbol === 'name') value = this.escapedValue(token, context, config);
     else if (symbol === 'text') value = this.rawValue(token);
 
-    if (value !== undefined)
+    if (value !== undefined) {
       buffer += value;
+    } else {
+      // If multipleAttempts
+      buffer += token;
+    }
   }
 
   return buffer;
 };
 
-Writer.prototype.renderSection = function renderSection (token, context, partials, originalTemplate, config) {
+Writer.prototype.renderSection = function renderSection (token, context, partials, originalTemplate, config, multipleAttempts = false) {
   var self = this;
   var buffer = '';
   var value = context.lookup(token[1]);
@@ -597,10 +606,10 @@ Writer.prototype.renderSection = function renderSection (token, context, partial
 
   if (isArray(value)) {
     for (var j = 0, valueLength = value.length; j < valueLength; ++j) {
-      buffer += this.renderTokens(token[4], context.push(value[j]), partials, originalTemplate, config);
+      buffer += this.renderTokens(token[4], context.push(value[j]), partials, originalTemplate, config, multipleAttempts);
     }
   } else if (typeof value === 'object' || typeof value === 'string' || typeof value === 'number') {
-    buffer += this.renderTokens(token[4], context.push(value), partials, originalTemplate, config);
+    buffer += this.renderTokens(token[4], context.push(value), partials, originalTemplate, config, multipleAttempts);
   } else if (isFunction(value)) {
     if (typeof originalTemplate !== 'string')
       throw new Error('Cannot use higher-order sections without the original template');
@@ -611,18 +620,18 @@ Writer.prototype.renderSection = function renderSection (token, context, partial
     if (value != null)
       buffer += value;
   } else {
-    buffer += this.renderTokens(token[4], context, partials, originalTemplate, config);
+    buffer += this.renderTokens(token[4], context, partials, originalTemplate, config, multipleAttempts);
   }
   return buffer;
 };
 
-Writer.prototype.renderInverted = function renderInverted (token, context, partials, originalTemplate, config) {
+Writer.prototype.renderInverted = function renderInverted (token, context, partials, originalTemplate, config, multipleAttempts = false) {
   var value = context.lookup(token[1]);
 
   // Use JavaScript's definition of falsy. Include empty arrays.
   // See https://github.com/janl/mustache.js/issues/186
   if (!value || (isArray(value) && value.length === 0))
-    return this.renderTokens(token[4], context, partials, originalTemplate, config);
+    return this.renderTokens(token[4], context, partials, originalTemplate, config, multipleAttempts);
 };
 
 Writer.prototype.indentPartial = function indentPartial (partial, indentation, lineHasNonSpace) {
